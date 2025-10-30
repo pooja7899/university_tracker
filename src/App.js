@@ -1,294 +1,375 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
-import './Dashboard.css';
-import { ToastContainer, toast } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
+// src/App.js
+import React, { useState, useEffect, useCallback } from "react";
+import axios from "axios";
+import "./Dashboard.css";
+import { ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+import { saveAs } from "file-saver";
 
-// ------------------ LOGIN COMPONENT ------------------
+// ------------------ LOGIN ------------------
 function Login({ setToken, setRole }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
   const handleLogin = () => {
+    console.log("Sending login:", { email, password }); // Log before the request
+
     axios
-      .post('http://localhost:5000/login', { email, password })
-      .then(res => {
+      .post("http://localhost:5000/login", { email, password }) // Use state values
+      .then((res) => {
+        localStorage.setItem("token", res.data.token);
+        localStorage.setItem("role", res.data.role);
         setToken(res.data.token);
         setRole(res.data.role);
-        toast.success('Login successful');
+        toast.success("Login successful!");
       })
-      .catch(() => toast.error('Login failed'));
+      .catch((err) => {
+        const msg = err.response?.data?.error || "Login failed";
+        toast.error(msg);
+      });
   };
 
   return (
     <div className="login-container">
-      <h2>Login</h2>
-      <input placeholder="Email" onChange={e => setEmail(e.target.value)} />
-      <input
-        type="password"
-        placeholder="Password"
-        onChange={e => setPassword(e.target.value)}
-      />
-      <button onClick={handleLogin}>Login</button>
+      <div className="login-box">
+        <h2>University Tracker Login</h2>
+        <input
+          type="email"
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <input
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        <button onClick={handleLogin}>Login</button>
+        <p className="demo-info">
+          Demo credentials: <br />
+          <strong>admin@example.com</strong> / <strong>password123</strong>
+        </p>
+      </div>
     </div>
   );
 }
 
-// ------------------ DASHBOARD COMPONENT ------------------
-function Dashboard({ token }) {
+// ------------------ DASHBOARD ------------------
+function Dashboard({ token, role, setToken, setRole }) {
   const [students, setStudents] = useState([]);
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    enrollment_year: ''
+    name: "",
+    email: "",
+    enrollment_year: "",
   });
-  const [searchTerm, setSearchTerm] = useState('');
-  const [yearFilter, setYearFilter] = useState('');
   const [editingId, setEditingId] = useState(null);
+  const [stats, setStats] = useState({
+    totalStudents: 0,
+    totalAttendance: 0,
+    avgPercentage: 0,
+  });
+  const [comments, setComments] = useState([]);
+  const [noteTitle, setNoteTitle] = useState("");
+  const [noteBody, setNoteBody] = useState("");
 
-  // ------------------ Fetch Students ------------------
+  const getHeaders = useCallback(
+    () => (token ? { Authorization: `Bearer ${token}` } : {}),
+    [token]
+  );
+
+  // ---------------- FETCH STUDENTS ----------------
   const fetchStudents = useCallback(() => {
-    // For demo: populate with sample students
-    const sampleStudents = [
-      { id: 1, name: 'Alice', email: 'alice@example.com', enrollment_year: 2025 },
-      { id: 2, name: 'Bob', email: 'bob@example.com', enrollment_year: 2024 },
-      { id: 3, name: 'Charlie', email: 'charlie@example.com', enrollment_year: 2023 },
-    ];
-    setStudents(sampleStudents);
-
-    // Uncomment below to fetch from backend once your token is valid
-    /*
     axios
-      .get('http://localhost:5000/students', {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      .then(res => setStudents([...res.data].reverse()))
-      .catch(err => console.error('Error fetching students:', err));
-    */
-  }, [token]);
+      .get("http://localhost:5000/students", { headers: getHeaders() })
+      .then((res) => setStudents(res.data))
+      .catch(() => toast.error("Failed to fetch students"));
+  }, [getHeaders]);
 
   useEffect(() => {
     fetchStudents();
   }, [fetchStudents]);
 
-  // ------------------ Form Handlers ------------------
-  const handleChange = e => {
+  // ---------------- FETCH STATS ----------------
+  const fetchStats = useCallback(() => {
+    axios
+      .get("http://localhost:5000/attendance/stats", { headers: getHeaders() })
+      .then((res) => setStats(res.data))
+      .catch(() => toast.error("Failed to fetch stats"));
+  }, [getHeaders]);
+
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
+
+  // ---------------- FETCH COMMENTS ----------------
+  const fetchComments = useCallback(() => {
+    axios
+      .get("http://localhost:5000/comments", { headers: getHeaders() })
+      .then((res) => setComments(res.data))
+      .catch(() => toast.error("Failed to fetch comments"));
+  }, [getHeaders]);
+
+  useEffect(() => {
+    fetchComments();
+  }, [fetchComments]);
+
+  // ---------------- LOGOUT ----------------
+  const handleLogout = () => {
+    localStorage.clear();
+    setToken(null);
+    setRole(null);
+  };
+
+  // ---------------- FORM HANDLERS ----------------
+  const handleChange = (e) =>
     setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
 
-  const handleSubmit = e => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    if (!token) return;
+    const headers = getHeaders();
 
-    const headers = { Authorization: `Bearer ${token}` };
-
-    if (editingId) {
-      // Update student (backend call)
-      axios
-        .put(`http://localhost:5000/students/${editingId}`, formData, { headers })
-        .then(() => {
-          toast.success('Student updated');
-          fetchStudents();
-          setFormData({ name: '', email: '', enrollment_year: '' });
-          setEditingId(null);
-        })
-        .catch(err => console.error(err));
-    } else {
-      // Add student (backend call)
-      axios
-        .post('http://localhost:5000/students', formData, { headers })
-        .then(() => {
-          toast.success('Student added');
-          fetchStudents();
-          setFormData({ name: '', email: '', enrollment_year: '' });
-        })
-        .catch(err => console.error(err));
+    if (role !== "admin") {
+      toast.info("Only admin can add or edit students");
+      return;
     }
+
+    const request = editingId
+      ? axios.put(`http://localhost:5000/students/${editingId}`, formData, {
+          headers,
+        })
+      : axios.post("http://localhost:5000/students", formData, { headers });
+
+    request
+      .then(() => {
+        toast.success(editingId ? "Student updated" : "Student added");
+        fetchStudents();
+        setFormData({ name: "", email: "", enrollment_year: "" });
+        setEditingId(null);
+      })
+      .catch(() => toast.error("Operation failed"));
   };
 
-  // ------------------ Other Handlers ------------------
-  const handleEdit = student => {
-    setFormData({
-      name: student.name,
-      email: student.email,
-      enrollment_year: student.enrollment_year
-    });
-    setEditingId(student.id);
-  };
-
-  const handleDelete = id => {
-    if (!token) {
-      // For demo: remove locally
-      setStudents(students.filter(s => s.id !== id));
-      toast.info('Student deleted (demo)');
+  const handleDelete = (id) => {
+    if (role !== "admin") {
+      toast.info("Only admin can delete students");
       return;
     }
 
     axios
-      .delete(`http://localhost:5000/students/${id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      .delete(`http://localhost:5000/students/${id}`, { headers: getHeaders() })
       .then(() => {
-        toast.info('Student deleted');
+        toast.success("Student deleted");
         fetchStudents();
       })
-      .catch(err => console.error(err));
+      .catch(() => toast.error("Failed to delete student"));
   };
 
   const markAttendance = (studentId, status) => {
-    if (!status) return;
-    toast.success(`Marked ${status} for Student ${studentId} (demo)`);
-
-    if (!token) return; // skip backend if dummy
     axios
       .post(
-        'http://localhost:5000/attendance',
+        "http://localhost:5000/attendance",
         { student_id: studentId, status },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: getHeaders() }
       )
-      .catch(err => console.error(err));
+      .then(() => {
+        toast.success(`Marked ${status}`);
+        fetchStats();
+      })
+      .catch(() => toast.error("Failed to mark attendance"));
   };
 
-  const viewAttendance = studentId => {
-    if (!token) {
-      alert(`Viewing attendance for Student ${studentId} (demo)`);
-      return;
-    }
-
+  const viewAttendance = (studentId) => {
     axios
       .get(`http://localhost:5000/attendance/${studentId}`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: getHeaders(),
       })
-      .then(res => {
+      .then((res) => {
         const history = res.data;
-        if (history.length === 0) {
-          alert(`No attendance records found for Student ${studentId}`);
-        } else {
-          const formatted = history
-            .map(entry => `${entry.date}: ${entry.status}`)
-            .join('\n');
-          alert(`Attendance for Student ${studentId}:\n\n${formatted}`);
-        }
+        if (!history.length) toast.info("No attendance records found");
+        else alert(history.map((h) => `${h.date}: ${h.status}`).join("\n"));
       })
-      .catch(err => console.error(err));
+      .catch(() => toast.error("Failed to fetch attendance"));
   };
 
-  // ------------------ Render ------------------
+  const postComment = () => {
+    if (!noteTitle || !noteBody) return toast.error("Write title & body");
+    axios
+      .post(
+        "http://localhost:5000/comments",
+        { title: noteTitle, body: noteBody },
+        { headers: getHeaders() }
+      )
+      .then(() => {
+        toast.success("Note added");
+        setNoteTitle("");
+        setNoteBody("");
+        fetchComments();
+      })
+      .catch(() => toast.error("Failed to add note"));
+  };
+
+  const handleExport = () => {
+    const payload = { students, stats, comments };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    saveAs(blob, "university_tracker_export.json");
+    toast.success("Exported JSON");
+  };
+
+  // ---------------- RENDER ----------------
   return (
     <div className="container">
+      <ToastContainer position="top-right" autoClose={3000} />
       <h1>University Tracker Dashboard</h1>
+      <button onClick={handleLogout}>Logout</button>
 
-      <form onSubmit={handleSubmit} style={{ marginBottom: '20px' }}>
-        <input
-          type="text"
-          name="name"
-          placeholder="Name"
-          value={formData.name}
-          onChange={handleChange}
-          required
-        />
-        <input
-          type="email"
-          name="email"
-          placeholder="Email"
-          value={formData.email}
-          onChange={handleChange}
-          required
-        />
-        <input
-          type="number"
-          name="enrollment_year"
-          placeholder="Enrollment Year"
-          value={formData.enrollment_year}
-          onChange={handleChange}
-          required
-        />
-        <button type="submit" style={{ marginLeft: '10px' }}>
-          {editingId ? 'Update Student' : 'Add Student'}
-        </button>
-      </form>
+      {/* Stats Section */}
+      <div className="stats-cards">
+        <div className="card">
+          <h4>Total Students</h4>
+          <p className="big">{stats.totalStudents}</p>
+        </div>
+        <div className="card">
+          <h4>Total Attendance</h4>
+          <p className="big">{stats.totalAttendance}</p>
+        </div>
+        <div className="card">
+          <h4>Average Attendance</h4>
+          <p className="big">{stats.avgPercentage}%</p>
+        </div>
+        <div className="card">
+          <h4>Actions</h4>
+          <button onClick={handleExport}>Export JSON</button>
+        </div>
+      </div>
 
-      <input
-        type="text"
-        placeholder="Search by name..."
-        value={searchTerm}
-        onChange={e => setSearchTerm(e.target.value)}
-        style={{ marginBottom: '20px', padding: '10px', width: '300px', borderRadius: '6px', border: '1px solid #ccc' }}
-      />
+      {/* Add/Edit Form */}
+      {role === "admin" && (
+        <form onSubmit={handleSubmit} className="student-form">
+          <input
+            name="name"
+            value={formData.name}
+            placeholder="Name"
+            onChange={handleChange}
+            required
+          />
+          <input
+            name="email"
+            value={formData.email}
+            placeholder="Email"
+            onChange={handleChange}
+            required
+          />
+          <input
+            name="enrollment_year"
+            value={formData.enrollment_year}
+            placeholder="Year"
+            onChange={handleChange}
+            required
+          />
+          <button type="submit">
+            {editingId ? "Update" : "Add"} Student
+          </button>
+        </form>
+      )}
 
-      <select
-        value={yearFilter}
-        onChange={e => setYearFilter(e.target.value)}
-        style={{ marginLeft: '20px', padding: '10px', borderRadius: '6px', border: '1px solid #ccc' }}
-      >
-        <option value="">All Years</option>
-        <option value="2026">2026</option>
-        <option value="2025">2025</option>
-        <option value="2024">2024</option>
-        <option value="2023">2023</option>
-        <option value="2022">2022</option>
-        <option value="2021">2021</option>
-        <option value="2020">2020</option>
-      </select>
-
-      <table border="1" cellPadding="10" style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
+      {/* Students Table */}
+      <table className="students-table">
         <thead>
           <tr>
             <th>ID</th>
             <th>Name</th>
             <th>Email</th>
-            <th>Enrollment Year</th>
+            <th>Year</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {students
-            .filter(
-              s => s.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
-                (yearFilter === '' || s.enrollment_year.toString() === yearFilter)
-            )
-            .map(student => (
-              <tr key={student.id}>
-                <td>{student.id}</td>
-                <td>{student.name}</td>
-                <td>{student.email}</td>
-                <td>{student.enrollment_year}</td>
-                <td>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <button onClick={() => handleEdit(student)}>Edit</button>
-                    <button onClick={() => handleDelete(student.id)}>Delete</button>
-                    <select onChange={e => markAttendance(student.id, e.target.value)}>
-                      <option value="">Mark Attendance</option>
-                      <option value="Present">Present</option>
-                      <option value="Absent">Absent</option>
-                    </select>
-                    <button onClick={() => viewAttendance(student.id)}>View</button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+          {students.map((s) => (
+            <tr key={s.id}>
+              <td>{s.id}</td>
+              <td>{s.name}</td>
+              <td>{s.email}</td>
+              <td>{s.enrollment_year}</td>
+              <td>
+                {role === "admin" && (
+                  <>
+                    <button onClick={() => setEditingId(s.id)}>Edit</button>
+                    <button onClick={() => handleDelete(s.id)}>Delete</button>
+                  </>
+                )}
+                <select
+                  onChange={(e) => markAttendance(s.id, e.target.value)}
+                  defaultValue=""
+                >
+                  <option value="">Mark</option>
+                  <option value="Present">Present</option>
+                  <option value="Absent">Absent</option>
+                </select>
+                <button onClick={() => viewAttendance(s.id)}>View</button>
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
+
+      {/* Notes Section */}
+      <div className="notes-section">
+        <h3>Notes / Comments</h3>
+        <input
+          placeholder="Note Title"
+          value={noteTitle}
+          onChange={(e) => setNoteTitle(e.target.value)}
+        />
+        <textarea
+          placeholder="Note Body"
+          value={noteBody}
+          onChange={(e) => setNoteBody(e.target.value)}
+        />
+        <button onClick={postComment}>Add Note</button>
+
+        <ul className="comments-list">
+          {comments.map((c) => (
+            <li key={c.id}>
+              <strong>{c.title}</strong>: {c.body}
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }
 
-// ------------------ MAIN APP COMPONENT ------------------
+// ------------------ MAIN APP ------------------
 function App() {
-  // Temporary dummy token for testing
-  const [token, setToken] = useState('dummy-token');
-  const [role, setRole] = useState('admin');
+  const [token, setToken] = useState(null);
+  const [role, setRole] = useState(null);
+
+  useEffect(() => {
+    const storedToken = localStorage.getItem("token");
+    const storedRole = localStorage.getItem("role");
+    if (storedToken) setToken(storedToken);
+    if (storedRole) setRole(storedRole);
+  }, []);
 
   return (
     <>
+      <ToastContainer position="top-right" autoClose={3000} />
       {!token ? (
         <Login setToken={setToken} setRole={setRole} />
       ) : (
-        <Dashboard token={token} role={role} />
+        <Dashboard
+          token={token}
+          role={role}
+          setToken={setToken}
+          setRole={setRole}
+        />
       )}
-      <ToastContainer position="top-right" autoClose={3000} />
     </>
   );
 }
 
 export default App;
+
